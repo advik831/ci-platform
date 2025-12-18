@@ -2,6 +2,11 @@
 
 Production-ready GitLab Ultimate (self-managed 18.5.x) DevSecOps blueprints for air-gapped Kubernetes runners using Podman (vfs).
 
+Contents in this policy project:
+- `policy.yml` and `ci/` directory for Scan Execution + Pipeline Execution policies and helper scripts.
+- `gitlab-ci.image-repo.yml` for containerized apps and `gitlab-ci.non-image-repo.yml` for non-image repositories.
+- `images.txt` list of analyzer/tooling images to mirror into the private registry.
+
 ## Air-gap variables
 Set these as **masked + protected group variables** (scope: all projects using the policy project):
 
