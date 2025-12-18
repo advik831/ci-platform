@@ -1,0 +1,62 @@
+# Centralized GitLab Security Policies for Ultimate self-managed 18.5.x
+# This file is applied in the dedicated policy project and injected into target projects.
+# It contains:
+# 1) Scan Execution Policy (SEP) to run baseline scans on all branches/MRs with soft fail for feature branches.
+# 2) Pipeline Execution Policy (PEP) to enforce branch-aware gates, container promotion/signing, and OPA shell gate.
+# 3) Approval policy to enforce MR approvals on High/Critical findings.
+
+- type: scan_execution_policy
+  name: "Baseline DevSecOps Scans"
+  description: "Run SAST, Secret Detection, Dependency Scanning, IaC SAST on all pipelines using analyzer mirrors. Soft-fail on non-default branches."
+  enabled: true
+  rules:
+    # Run on all branches including merge requests
+    - type: pipeline
+      branches:
+        - ".*"
+  actions:
+    - scan: secret_detection
+      variables:
+        SECURE_ANALYZERS_PREFIX: "$SECURE_ANALYZERS_PREFIX"
+    - scan: sast
+      variables:
+        SECURE_ANALYZERS_PREFIX: "$SECURE_ANALYZERS_PREFIX"
+    - scan: dependency_scanning
+      variables:
+        SECURE_ANALYZERS_PREFIX: "$SECURE_ANALYZERS_PREFIX"
+    - scan: sast_iac
+      variables:
+        SECURE_ANALYZERS_PREFIX: "$SECURE_ANALYZERS_PREFIX"
+  # Soft-fail on non-default branches while default branch honors configured severity gate (see PEP and project settings)
+  approval_settings:
+    vulnerability_states: []
+
+- type: pipeline_execution_policy
+  name: "Branch-Aware Gates + Container Promotion"
+  description: "Injects enforcement jobs: OPA shell gate, severity gate on default branch, container promotion/signing only on default branch."
+  enabled: true
+  rules:
+    - type: pipeline
+      branches:
+        - ".*"
+  content: |
+    include:
+      - local: 'ci/injected-policy-gates.gitlab-ci.yml'
+
+- type: approval_policy
+  name: "High/Critical MR Approval"
+  description: "Require security approval for High/Critical findings detected by Secure scans on merge requests."
+  enabled: true
+  approvals_required: 1
+  approval_rules:
+    - type: scan_finding
+      branches:
+        - ".*"
+      scanners:
+        - sast
+        - secret_detection
+        - dependency_scanning
+        - sast_iac
+      severities:
+        - high
+        - critical

@@ -1,0 +1,67 @@
+# Application repo pipeline for containerized services.
+# Policies inject Secure scanners and gates; this file focuses on build/scan/promote/sign.
+
+stages:
+  - build
+  - scan
+  - promote
+  - sign
+
+variables:
+  BUILD_IMAGE_ENABLED: "true"
+  STORAGE_DRIVER: vfs
+  PODMAN_COMMAND: "podman --storage-driver=$STORAGE_DRIVER"
+  # Air-gap overrides
+  SECURE_ANALYZERS_PREFIX: "$SECURE_ANALYZERS_PREFIX"
+  CS_ANALYZER_IMAGE: "$CS_ANALYZER_IMAGE"
+  POLICY_TOOLS_IMAGE: "$POLICY_TOOLS_IMAGE"
+  PODMAN_IMAGE: "$PODMAN_IMAGE"
+  COSIGN_IMAGE: "$COSIGN_IMAGE"
+  BUILD_IMAGE: "$BUILD_IMAGE"
+
+# Build the application artifact (language-agnostic placeholder)
+build:app:
+  stage: build
+  image: "$BUILD_IMAGE"
+  script:
+    - echo "[info] Build application assets here"
+  artifacts:
+    paths:
+      - dist/
+
+# Build container in rootless podman and push to quarantine tag. Emits CS_IMAGE via dotenv.
+build:image_quarantine:
+  stage: build
+  image: "$PODMAN_IMAGE"
+  needs: ["build:app"]
+  script:
+    - export STORAGE_DRIVER=vfs
+    - podman info
+    - podman build -t "$CI_REGISTRY_IMAGE:ci-$CI_COMMIT_SHA" .
+    - podman push "$CI_REGISTRY_IMAGE:ci-$CI_COMMIT_SHA"
+    - echo "CS_IMAGE=$CI_REGISTRY_IMAGE:ci-$CI_COMMIT_SHA" > image.env
+    - echo "IMAGE_REGISTRY=$CI_REGISTRY" >> image.env
+  artifacts:
+    reports:
+      dotenv: image.env
+
+include:
+  - template: Jobs/Container-Scanning.gitlab-ci.yml
+
+container_scanning:
+  stage: scan
+  needs:
+    - job: build:image_quarantine
+      artifacts: true
+  variables:
+    CS_IMAGE: "$CS_IMAGE"
+    CS_ANALYZER_IMAGE: "$CS_ANALYZER_IMAGE"
+    SECURE_ANALYZERS_PREFIX: "$SECURE_ANALYZERS_PREFIX"
+  rules:
+    # Soft-fail on non-default branches, block default branch
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+      allow_failure: false
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      when: on_success
+      allow_failure: true
