@@ -1,0 +1,112 @@
+# Jobs injected by Pipeline Execution Policy.
+# Enforces branch-aware gates, container promotion, signing, and attestation.
+
+stages:
+  - preflight
+  - gate
+  - build
+  - scan
+  - promote
+  - sign
+  - attest
+
+variables:
+  # Prevent accidental use of runner cache for rootless podman
+  FF_NETWORK_PER_BUILD: "true"
+
+# Preflight checks to ensure required variables exist on default branch
+preflight:check_variables:
+  stage: preflight
+  image: "$POLICY_TOOLS_IMAGE"
+  script:
+    - python3 ci/scripts/security_gate.py --check-required-vars
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - when: never
+
+# OPA / Rego shell gate to allow central policy evaluation (custom logic in rego file)
+opa_shell_gate:
+  stage: gate
+  image: "$POLICY_TOOLS_IMAGE"
+  needs: []
+  script:
+    - ./ci/scripts/check_shell_gate.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - when: never
+
+# Branch-aware severity gate (hard-fail on default branch for High/Critical)
+security:severity_gate:
+  stage: gate
+  image: "$POLICY_TOOLS_IMAGE"
+  needs: ["preflight:check_variables"]
+  script:
+    - python3 ci/scripts/security_gate.py --severity-threshold "high" --enforce-default-branch
+  allow_failure: true
+  rules:
+    # Hard fail on default branch if threshold exceeded; soft-fail elsewhere
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+      allow_failure: false
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      when: on_success
+      allow_failure: true
+    - when: never
+
+# Promote quarantine image by digest when container scanning passes on default branch
+image:promote:
+  stage: promote
+  image: "$PODMAN_IMAGE"
+  needs:
+    - job: container_scanning
+      optional: true
+    - job: build:image_quarantine
+      optional: true
+  script:
+    - ./ci/scripts/image_to_oci.sh promote
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $BUILD_IMAGE_ENABLED == "true"'
+    - when: never
+
+# Sign the promoted digest using cosign (key-based)
+image:sign:
+  stage: sign
+  image: "$COSIGN_IMAGE"
+  needs:
+    - job: image:promote
+      optional: true
+  script:
+    - ./ci/scripts/image_to_oci.sh sign
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $BUILD_IMAGE_ENABLED == "true"'
+    - when: never
+
+# Optional SBOM generation (uses project-specified builder image)
+image:sbom:
+  stage: attest
+  image: "$PODMAN_IMAGE"
+  needs:
+    - job: image:promote
+      optional: true
+  script:
+    - ./ci/scripts/gen_sbom.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $BUILD_IMAGE_ENABLED == "true"'
+    - when: manual
+      allow_failure: false
+    - when: never
+
+# Optional provenance attestation
+image:provenance:
+  stage: attest
+  image: "$PODMAN_IMAGE"
+  needs:
+    - job: image:promote
+      optional: true
+  script:
+    - ./ci/scripts/gen_provenance.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $BUILD_IMAGE_ENABLED == "true"'
+    - when: manual
+      allow_failure: false
+    - when: never

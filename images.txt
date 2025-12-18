@@ -1,0 +1,19 @@
+# Mirrored images required for air-gapped GitLab Ultimate 18.5.x deployment
+
+## GitLab analyzers (pin to version/digest as mirrored)
+$SECURE_ANALYZERS_PREFIX/secret-detection:latest-pinned
+$SECURE_ANALYZERS_PREFIX/sast:latest-pinned
+$SECURE_ANALYZERS_PREFIX/dependency-scanning:latest-pinned
+$SECURE_ANALYZERS_PREFIX/iac-scan:latest-pinned
+$SECURE_ANALYZERS_PREFIX/container-scanning:<pin-or-digest>
+
+## Platform tooling
+$POLICY_TOOLS_IMAGE
+$PODMAN_IMAGE
+$COSIGN_IMAGE
+$BUILD_IMAGE
+
+## Org-approved base/runtime images (examples)
+<private-reg>/base/ubi9-micro:<pin>
+<private-reg>/base/distroless:<pin>
+<private-reg>/base/alpine:<pin>
