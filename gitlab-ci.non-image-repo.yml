@@ -1,0 +1,14 @@
+# Minimal CI for non-image repositories. Security scans injected via policy.
+
+stages:
+  - test
+
+variables:
+  BUILD_IMAGE_ENABLED: "false"
+  SECURE_ANALYZERS_PREFIX: "$SECURE_ANALYZERS_PREFIX"
+  POLICY_TOOLS_IMAGE: "$POLICY_TOOLS_IMAGE"
+
+unit_tests:
+  stage: test
+  script:
+    - echo "[info] run project tests here"
